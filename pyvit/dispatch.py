@@ -1,6 +1,6 @@
-import multiprocessing
-from multiprocessing import Queue, Process
-
+from threading import Thread
+from queue import Queue
+import inspect
 
 class Dispatcher:
     def __init__(self, device):
@@ -18,11 +18,7 @@ class Dispatcher:
         if self.is_running:
             raise Exception('dispatcher must be stopped to add receiver')
 
-        # ensure the receive queue is a queue
-        if not isinstance(rx_queue, multiprocessing.queues.Queue):
-            raise ValueError('invalid receive queue, %s' % type(rx_queue))
-        # ensure this queue is not already in the dispacher
-        elif rx_queue in self._rx_queues:
+        if rx_queue in self._rx_queues:
             raise ValueError('queue already in dispatcher')
 
         self._rx_queues.append(rx_queue)
@@ -43,8 +39,8 @@ class Dispatcher:
 
         self._device.start()
 
-        self._send_process = Process(target=self._send_loop)
-        self._recv_process = Process(target=self._recv_loop)
+        self._send_process = Thread(target=self._send_loop, daemon=True)
+        self._recv_process = Thread(target=self._recv_loop, daemon=True)
         self._recv_process.start()
         self._send_process.start()
         self._running = True
@@ -53,8 +49,8 @@ class Dispatcher:
         if not self.is_running:
             raise Exception('dispatcher not running')
 
-        self._recv_process.terminate()
-        self._send_process.terminate()
+        self._recv_process.join(0.5)
+        self._send_process.join(0.5)
         self._device.stop()
         self._running = False
 
@@ -76,5 +72,6 @@ class Dispatcher:
     def _recv_loop(self):
         while True:
             data = self._device.recv()
-            for rx_queue in self._rx_queues:
-                rx_queue.put_nowait(data)
+            if(data is not None):   
+                for rx_queue in self._rx_queues:
+                    rx_queue.put_nowait(data)

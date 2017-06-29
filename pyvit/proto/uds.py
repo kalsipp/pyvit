@@ -148,6 +148,11 @@ class GenericRequest(dict):
         self.name = name
 
     def _check_sid(self, data):
+        return
+            
+        #Checking SID this way is not correct to ISO-standard 
+        #as you recieve different SID depending on the answer. 
+        
         if data[0] != self.SID:
             raise ValueError('Invalid SID for service'
                              '(got 0x%X, expected 0x%X)' %
@@ -287,10 +292,10 @@ class SecurityAccess:
             # securitySeed is only present for seed requests, which are odd
             # values of securityAccessType
             if self['securityAccessType'] % 2 == 1:
-                self['securitySeed'] = _from_bytes(data[2:])
+                self['securitySeed'] = (data[2:])
 
     class Request(GenericRequest):
-        def __init__(self, security_access_type=0, security_key=None):
+        def __init__(self, security_access_type=0, security_key=[]):
             super(SecurityAccess.Request, self).__init__('SecurityAccess',
                                                          SecurityAccess.SID)
             self['securityAccessType'] = security_access_type
@@ -298,12 +303,12 @@ class SecurityAccess:
 
         def encode(self):
             return ([self.SID, self['securityAccessType']] +
-                    _to_bytes(self['securityKey']))
+                    (self['securityKey']))
 
         def decode(self, data):
             self._check_sid(data)
             self['securityAccessType'] = data[1]
-            self['securityKey'] = _from_bytes(data[2:])
+            self['securityKey'] = (data[2:])
 
 
 class CommunicationControl:
@@ -382,12 +387,16 @@ class TesterPresent:
             self._check_nrc(data)
 
     class Request(GenericRequest):
-        def __init__(self):
+        supressPosRspMsgIndicationBit = 0x80
+        def __init__(self, request_response=False):
             super(TesterPresent.Request, self).__init__('TesterPresent',
                                                         TesterPresent.SID)
-
+            self['request_response'] = request_response
         def encode(self):
-            return [self.SID, 0]
+            if(self['request_response']):
+                return [self.SID, 0]
+            else:
+                return [self.SID, self.supressPosRspMsgIndicationBit]
 
         def decode(self, data):
             self._check_sid(data)
@@ -1117,7 +1126,7 @@ class RoutineControl:
     class Request(GenericRequest):
         def __init__(self, routine_control_type=0,
                      routine_identifier=0,
-                     routine_control_option_record=None):
+                     routine_control_option_record=[]):
             super(RoutineControl.Request, self).__init__(
                 'RoutineControl',
                 RoutineControl.SID)
@@ -1330,13 +1339,13 @@ class UDSInterface(IsotpInterface):
         }
 
     def __init__(self, dispatcher, tx_arb_id=0x7E0, rx_arb_id=0x7E8):
-        super().__init__(dispatcher, tx_arb_id, rx_arb_id)
+        extended_id = tx_arb_id>0x7FF or rx_arb_id > 0X7FF
+        super().__init__(dispatcher, tx_arb_id, rx_arb_id, extended_id=extended_id)
 
     def request(self, service, timeout=0.5):
         self.send(service.encode())
-        data = self.recv(timeout=timeout)
-        return service.decode(data)
-
+        resp = self.decode_response()
+        return resp
     def decode_request(self):
         data = self.recv()
         if data is None:
